@@ -82,10 +82,10 @@ namespace secs4netTest1
                 switch (primary.S, primary.F)
                 {
                     case (1, 1): // Are You There
-                        await ReplyAsync(e, 1, 2, L());
+                        await ReplyAsync(e, 1, 2, L(A("EQP"), A("1.0.0")));
                         break;
                     case (1, 13): // Establish Communication
-                        await ReplyAsync(e, 1, 14, L(A("EQP"), A("1.0.0")));
+                        await ReplyAsync(e, 1, 14, L(B(0),A("EQP"), A("1.0.0")));
                         break;
                 }
             }
