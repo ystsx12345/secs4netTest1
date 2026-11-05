@@ -6,7 +6,9 @@ using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
 using Secs4Net;
+using secs4netTest1.SFhandlers;
 using static Secs4Net.Item;
+
 
 namespace secs4netTest1
 {
@@ -26,7 +28,7 @@ namespace secs4netTest1
     /// - 接收循环跑在线程池线程上（Task.Run + GetPrimaryMessageAsync）。
     /// - 所有日志通过 LogReceived 事件抛出，由 UI 层负责 Dispatcher 切线程。
     /// </summary>
-    public class SecsEquipmentService : IAsyncDisposable
+    public class SecsEquipmentService : IAsyncDisposable, IReplyContext
     {
         /// <summary>
         /// secs4net 的核心对象：负责 SECS-II 消息的发送/接收、事务管理（T3 超时等）。
@@ -60,6 +62,10 @@ namespace secs4netTest1
         /// </summary>
         public event Action<SecsLogItem>? LogReceived;
 
+
+        private S1Handler _s1Handler = null!;
+        private S2Handler _s2Handler = null!;
+
         /// <summary>
         /// 启动设备端监听。
         /// </summary>
@@ -68,6 +74,11 @@ namespace secs4netTest1
         /// <param name="deviceId">SECS 设备 ID，必须与 Host 配置一致。</param>
         public void Start(string ip, int port, ushort deviceId)
         {
+            _s1Handler = new(this);
+            _s2Handler = new(this);
+
+
+
             // SecsGemOptions 是 secs4net 的配置对象。
             // 这里用 Options.Create 包一层，是因为 SecsGem/HsmsConnection 的构造函数
             // 签名要求 IOptions<SecsGemOptions>（为了兼容 .NET 的 Options 模式），
@@ -127,7 +138,7 @@ namespace secs4netTest1
                     await foreach (var e in _secsGem.GetPrimaryMessageAsync(token))
                     {
                         // e.PrimaryMessage 是收到的消息对象，用完必须 Dispose（它持有非托管缓冲）。
-                        // 用 using 确保每条消息处理完就释放。
+                        // 用 using 确保每条消息处理完就释放。 
                         using var primary = e.PrimaryMessage;
 
                         // 路由到具体的处理逻辑（switch）。
@@ -152,9 +163,10 @@ namespace secs4netTest1
         /// 
         /// 当前只处理 S1F1 和 S1F13。后续应按“消息族”拆到 Handler 类里，
         /// 这里只保留 switch 路由，避免本方法变成几千行的上帝方法。
-        /// </summary>
+        /// </summary>aaaaaaaaaaa
         private async Task ProcessPrimaryMessageAsync(PrimaryMessageWrapper e, SecsMessage primary)
         {
+
             try
             {
                 // 先把“收到消息”记入日志，方便在 UI 上观察交互时序。
@@ -163,23 +175,33 @@ namespace secs4netTest1
                 {
                     Direction = LogDirection.Receive,
                     MessageText = $"S{primary.S}F{primary.F}",
-                    Content = primary.SecsItem?.ToString() ?? ""
+                    Content = primary.SecsItem?.ToSmlString() ?? ""
                 });
 
                 switch (primary.S, primary.F)
                 {
                     case (1, 1): // Are You There：Host 询问设备是否在线
-                        // 回复 S1F2，数据体是 L(MDLN, SOFTREV)：
-                        // MDLN = 设备型号，SOFTREV = 软件版本。
-                        // 这里用 ASCII 字符串 "EQP" 和 "1.0.0" 示意，实际按设备真实信息填。
-                        await ReplyAsync(e, 1, 2, L(A("EQP"), A("1.0.0")));
+                                 // 回复 S1F2，数据体是 L(MDLN, SOFTREV)：
+                                 // MDLN = 设备型号，SOFTREV = 软件版本。
+                                 // 这里用 ASCII 字符串 "EQP" 和 "1.0.0" 示意，实际按设备真实信息填。
+                                 //  await ReplyAsync(e, 1, 2, L(A("EQP"), A("1.0.0")));
+                        await _s1Handler.S1F1ReplyAsync(e);
                         break;
 
                     case (1, 13): // Establish Communication：Host 请求建立通信
                         // 回复 S1F14，标准结构是 L(COMMACK, L(MDLN, SOFTREV))：
                         // COMMACK 是 B 类型，B(0) 表示接受通信（非 0 表示拒绝）。
                         // 注意：MDLN/SOFTREV 要嵌套在第二个 L 里，不能平铺在第一层。
-                        await ReplyAsync(e, 1, 14, L(B(0), A("EQP"), A("1.0.0")));
+                        await _s1Handler.S1F13ReplyAsync(e);
+                        break;
+                    case (1, 15):
+                        await _s1Handler.S1F15ReplyAsync(e);
+                        break;
+                    case (1, 17):
+                        await _s1Handler.S1F17ReplyAsync(e);
+                        break;
+                    case (2, 41):
+                        await _s2Handler.S2F41ReplyAsync(e);
                         break;
 
                         // 后续在这里补：
@@ -204,16 +226,8 @@ namespace secs4netTest1
             }
         }
 
-        /// <summary>
-        /// 发送回复消息的辅助方法。
-        /// 
-        /// 所有 Handler 都通过它回复，保证：
-        /// 1. 回复消息被正确 Dispose（using）。
-        /// 2. 发送前统一记录“发出”日志。
-        /// 3. 用 TryReplyAsync 而不是 SendAsync：TryReplyAsync 是“对某条 Primary Message
-        ///    的回复”，它内部会正确处理事务/会话；SendAsync 用于主动发起新事务。
-        /// </summary>
-        internal async Task ReplyAsync(PrimaryMessageWrapper wrapper, byte s, byte f, Item item)
+
+        public async Task ReplyAsync(PrimaryMessageWrapper wrapper, byte s, byte f, Item item)
         {
             using var reply = new SecsMessage(s, f) { SecsItem = item };
 
@@ -221,13 +235,41 @@ namespace secs4netTest1
             {
                 Direction = LogDirection.Send,
                 MessageText = $"S{s}F{f}",
-                Content = item.ToString() ?? ""
+                Content = item.ToSmlString() ?? ""
+
             });
 
             // ConfigureAwait(false) 表示“不需要回到原来的 SynchronizationContext”。
             // 因为这是后台线程调用的，不涉及 UI，加上可以避免不必要的线程切换开销。
             await wrapper.TryReplyAsync(reply).ConfigureAwait(false);
         }
+
+        ///// <summary>
+        ///// 发送回复消息的辅助方法。
+        ///// 
+        ///// 所有 Handler 都通过它回复，保证：
+        ///// 1. 回复消息被正确 Dispose（using）。
+        ///// 2. 发送前统一记录“发出”日志。
+        ///// 3. 用 TryReplyAsync 而不是 SendAsync：TryReplyAsync 是“对某条 Primary Message
+        /////    的回复”，它内部会正确处理事务/会话；SendAsync 用于主动发起新事务。
+        ///// </summary>
+        //internal async Task ReplyAsync(PrimaryMessageWrapper wrapper, byte s, byte f, Item item)
+        //{
+        //    using var reply = new SecsMessage(s, f) { SecsItem = item };
+
+        //    LogReceived?.Invoke(new SecsLogItem
+        //    {
+        //        Direction = LogDirection.Send,
+        //        MessageText = $"S{s}F{f}",
+        //        Content = item.ToSmlString() ?? ""
+
+        //    });
+
+        //    // ConfigureAwait(false) 表示“不需要回到原来的 SynchronizationContext”。
+        //    // 因为这是后台线程调用的，不涉及 UI，加上可以避免不必要的线程切换开销。
+        //    await wrapper.TryReplyAsync(reply).ConfigureAwait(false);
+        //}
+
 
         /// <summary>
         /// 主动上报事件报告 S6F11（设备 → Host）。
@@ -255,7 +297,8 @@ namespace secs4netTest1
             {
                 Direction = LogDirection.Send,
                 MessageText = "S6F11",
-                Content = $"CEID={ceid}, RPTID={rptid}, 数据={string.Join<Item>(", ", data)}"
+                // Content = $"CEID={ceid}, RPTID={rptid}, 数据={string.Join<Item>(", ", data)}"
+                Content = s6f11.SecsItem?.ToSmlString() ?? ""
             });
 
             try
@@ -267,7 +310,7 @@ namespace secs4netTest1
                 {
                     Direction = LogDirection.Receive,
                     MessageText = $"S{reply.S}F{reply.F}",
-                    Content = reply.SecsItem?.ToString() ?? ""
+                    Content = reply.SecsItem?.ToSmlString() ?? ""
                 });
 
                 // 可选：校验回复是否真的是 S6F12。如果不是（例如 S6F0 中止），

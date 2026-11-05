@@ -70,54 +70,54 @@
                   FontSize="12"
                   VirtualizingPanel.IsVirtualizing="True"
                   VirtualizingPanel.VirtualizationMode="Recycling"
-                  ScrollViewer.IsDeferredScrollingEnabled="True">
-            <ListView.View>
-                <GridView>
-                    <GridViewColumn Header="时间"
-                                    Width="95"
-                                    DisplayMemberBinding="{Binding TimeText}" />
-                    <GridViewColumn Header="方向"
-                                    Width="60">
-                        <GridViewColumn.CellTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding DirectionText}">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Foreground"
-                                                    Value="Gray" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Direction}"
-                                                             Value="Receive">
-                                                    <Setter Property="Foreground"
-                                                            Value="#1565C0" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding Direction}"
-                                                             Value="Send">
-                                                    <Setter Property="Foreground"
-                                                            Value="#2E7D32" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding Direction}"
-                                                             Value="Error">
-                                                    <Setter Property="Foreground"
-                                                            Value="#C62828" />
-                                                    <Setter Property="FontWeight"
-                                                            Value="Bold" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                            </DataTemplate>
-                        </GridViewColumn.CellTemplate>
-                    </GridViewColumn>
-                    <GridViewColumn Header="消息"
-                                    Width="90"
-                                    DisplayMemberBinding="{Binding MessageText}" />
-                    <GridViewColumn Header="内容"
-                                    Width="720"
-                                    DisplayMemberBinding="{Binding Content}" />
-                </GridView>
-            </ListView.View>
+                  ScrollViewer.IsDeferredScrollingEnabled="True"
+                  BorderThickness="0">
+
+            <!-- 改成这行整体多行的样式 -->
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <!-- 用 TextBlock 包裹所有内容，开启换行 TextWrapping="Wrap" -->
+                    <TextBlock TextWrapping="Wrap"
+                               Margin="4,8,4,8"
+                               LineHeight="18">
+                
+                <!-- 头部信息（时间 + 方向 + 消息）同一行显示，用 Run 拼起来 -->
+                <Run Text="{Binding TimeText, Mode=OneWay}"
+                        Foreground="Gray" />
+                <Run Text="  " />
+                <Run Text="{Binding DirectionText, Mode=OneWay}"
+                        FontWeight="Bold">
+                    <Run.Style>
+                        <Style TargetType="Run">
+                            <Setter Property="Foreground"
+                                    Value="Gray" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Direction}"
+                                             Value="Receive">
+                                    <Setter Property="Foreground"
+                                            Value="#1565C0" /> <!-- 接收蓝色 -->
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Direction}"
+                                             Value="Send">
+                                    <Setter Property="Foreground"
+                                            Value="#2E7D32" /> <!-- 发送绿色 -->
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Run.Style>
+                </Run>
+                <Run Text="{Binding MessageText, Mode=OneWay}"
+                        FontWeight="Bold"
+                        Foreground="Black" />
+                <LineBreak /> <!-- 头部之后换行 -->
+                
+                <!-- 具体的 SML 内容：利用 xml:space="preserve" 保留缩进 -->
+                <Run Text="{Binding Content, Mode=OneWay}"
+                        xml:space="preserve" />
+
+                    </TextBlock>
+                </DataTemplate>
+            </ListView.ItemTemplate>
         </ListView>
 
         <!-- 主动上报 -->
